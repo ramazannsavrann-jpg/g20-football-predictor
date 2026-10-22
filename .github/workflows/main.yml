@@ -40,8 +40,24 @@ jobs:
           distribution: temurin
           java-version: 17
 
+      - name: Remove unavailable Replit plugin
+        run: |
+          find . -name package.json -not -path '*/node_modules/*' -print0 | while IFS= read -r -d '' file; do
+            node -e '
+              const fs = require("fs");
+              const file = process.argv[1];
+              const p = JSON.parse(fs.readFileSync(file, "utf8"));
+              for (const section of ["dependencies", "devDependencies", "optionalDependencies"]) {
+                if (p[section]) delete p[section]["@replit/vite-plugin-cartographer"];
+              }
+              fs.writeFileSync(file, JSON.stringify(p, null, 2) + "\n");
+            ' "$file"
+          done
+
       - name: Install dependencies
         run: pnpm install
+      
+        
 
       - name: Sync Android project
         run: pnpm android:sync
