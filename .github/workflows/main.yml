@@ -1,0 +1,59 @@
+name: Build Android APK
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Extract project ZIP
+        run: |
+          mkdir -p /tmp/g20
+          unzip -q DOC-20261022-WA0008.zip -d /tmp/g20
+          PROJECT_DIR=$(find /tmp/g20 -name package.json -not -path '*/node_modules/*' -print -quit | xargs dirname)
+          if [ -z "$PROJECT_DIR" ] || [ ! -f "$PROJECT_DIR/package.json" ]; then
+            echo "Could not find project package.json in ZIP"
+            exit 1
+          fi
+          cp -a "$PROJECT_DIR"/. .
+          echo "Project files copied from $PROJECT_DIR"
+          ls -la
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Sync Android project
+        run: pnpm android:sync
+
+      - name: Build APK
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleDebug
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: G20-Football-Predictor-APK
+          path: android/app/build/outputs/apk/debug/app-debug.apk
