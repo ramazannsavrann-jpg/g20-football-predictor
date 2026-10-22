@@ -1,3 +1,4 @@
+
 name: Build Android APK
 
 on:
@@ -15,19 +16,18 @@ jobs:
         run: |
           mkdir -p /tmp/g20
           unzip -q DOC-20261022-WA0008.zip -d /tmp/g20
-          PROJECT_DIR=$(find /tmp/g20 -name package.json -not -path '*/node_modules/*' -print -quit | xargs dirname)
+          PROJECT_DIR=$(find /tmp/g20 -name package.json -not -path '*/node_modules/*' -print -quit | xargs -r dirname)
           if [ -z "$PROJECT_DIR" ] || [ ! -f "$PROJECT_DIR/package.json" ]; then
-            echo "Could not find project package.json in ZIP"
+            echo "Could not find package.json in ZIP"
             exit 1
           fi
           cp -a "$PROJECT_DIR"/. .
           echo "Project files copied from $PROJECT_DIR"
-          ls -la
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
 
       - name: Set up pnpm
         uses: pnpm/action-setup@v4
@@ -35,29 +35,43 @@ jobs:
           version: 9
 
       - name: Set up Java
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: 17
 
-      - name: Remove unavailable Replit plugin
+      - name: Remove unavailable Replit plugins
         run: |
-          find . -name package.json -not -path '*/node_modules/*' -print0 | while IFS= read -r -d '' file; do
-            node -e '
-              const fs = require("fs");
-              const file = process.argv[1];
-              const p = JSON.parse(fs.readFileSync(file, "utf8"));
-              for (const section of ["dependencies", "devDependencies", "optionalDependencies"]) {
-                if (p[section]) delete p[section]["@replit/vite-plugin-cartographer"];
+          node <<'NODE'
+          const fs = require('fs');
+          const path = require('path');
+
+          function walk(dir) {
+            for (const item of fs.readdirSync(dir, { withFileTypes: true })) {
+              if (item.name === 'node_modules' || item.name === '.git') continue;
+              const full = path.join(dir, item.name);
+              if (item.isDirectory()) {
+                walk(full);
+              } else if (item.name === 'package.json') {
+                const pkg = JSON.parse(fs.readFileSync(full, 'utf8'));
+                for (const section of ['dependencies', 'devDependencies', 'optionalDependencies']) {
+                  if (!pkg[section]) continue;
+                  for (const name of [
+                    '@replit/vite-plugin-cartographer',
+                    '@replit/vite-plugin-dev-banner'
+                  ]) {
+                    delete pkg[section][name];
+                  }
+                }
+                fs.writeFileSync(full, JSON.stringify(pkg, null, 2) + '\n');
               }
-              fs.writeFileSync(file, JSON.stringify(p, null, 2) + "\n");
-            ' "$file"
-          done
+            }
+          }
+          walk('.');
+          NODE
 
       - name: Install dependencies
-        run: pnpm install
-      
-        
+        run: pnpm install --no-frozen-lockfile
 
       - name: Sync Android project
         run: pnpm android:sync
